@@ -64,9 +64,49 @@ class BasicBlock(nn.HybridBlock):
 class BottleNeck(nn.HybridBlock):
     r"""Bottleneck from `"Deep Residual Learning for Image Recognition"
     <http://arxiv.org/abs/1512.03385>`_ paper.
+
+    Parameters
+    ----------
+    channels : int
+        Number of output channels.
+    stride : int
+        Stride size.
+    downsample : bool, default False
+        Whether to downsample the input.
+    in_channels : int, default 0
+        Number of input channels. Default is 0, to infer from the graph.
     """
-    def __init__(self, **kwargs):
+
+    def __init__(self, channels, stride, downsample=False, in_channels=0, **kwargs):
         super(BottleNeck, self).__init__(**kwargs)
+
+        self.body = nn.HybridSequential(prefix='')
+        self.body.add(nn.Conv2D(channels // 4, kernel_size=1, strides=stride))
+        self.body.add(nn.BatchNorm())
+        self.body.add(nn.Activation('relu'))
+
+        self.body.add(_conv3x3(channels // 4, 1, channels // 4))
+        self.body.add(nn.BatchNorm())
+        self.body.add(nn.Activation('relu'))
+
+        self.body.add(nn.Conv2D(channels, kernel_size=1, strides=1))
+        self.body.add(nn.BatchNorm())
+
+        if downsample:
+            self.shortcut = nn.HybridSequential(prefix='')
+            self.shortcut.add(nn.Conv2D(channels, kernel_size=1, strides=stride,
+                                        use_bias=False, in_channels=in_channels))
+        else:
+            self.shortcut = None
         
-    def hybrid_forward(self, F, X):
-        pass
+    def hybrid_forward(self, F, x):
+        residual = x
+
+        x = self.body(x)
+
+        if self.shortcut:
+            residual = self.shortcut(residual)
+        
+        x = F.Activation(residual + x, act_type='relu')
+
+        return x
